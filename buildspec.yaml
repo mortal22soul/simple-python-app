@@ -1,0 +1,74 @@
+version: 0.2
+
+env:
+  variables: {}
+  parameter-store:
+    DOCKERHUB_USERNAME: dockerhub-username
+    DOCKERHUB_PAT: dockerhub-pat
+    LOGS_BUCKET: logs-bucket
+    SNYK_TOKEN: snyk-auth-token
+    SNYK_ORG: snyk-org
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - echo "Installing dependencies ..."
+      - pip install -qr requirements.txt
+
+      - echo "Installing semgrep ..."
+      - pip install -q semgrep
+
+      - echo "Installing snyk cli ..."
+      - curl https://static.snyk.io/cli/latest/snyk-linux -o snyk
+      - chmod +x ./snyk
+      - mv ./snyk /usr/local/bin/
+
+      - echo "Installing trivy ..."
+      - sudo apt-get update && sudo apt-get install -y wget gnupg curl
+      - wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+      - echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+      - sudo apt-get update
+      - sudo apt-get install -y trivy
+
+  build:
+    commands:
+      #### Semgrep ####
+      - echo "Running Semgrep scan ..."
+      - semgrep --config=auto --json --output=semgrep-results.json || true
+      - aws s3 cp semgrep-results.json "s3://$LOGS_BUCKET/semgrep-results-$(date +%Y%m%d%H%M%S).json"
+
+      #### Snyk Auth ####
+      - echo "Authenticating with Snyk ..."
+      - snyk auth "$SNYK_TOKEN"
+
+      #### Snyk Open Source Scan ####
+      - echo "Running Snyk scan for open source vulnerabilities ..."
+      - snyk test --all-projects --org="$SNYK_ORG" --json > snyk-results.json || true
+      - aws s3 cp snyk-results.json "s3://$LOGS_BUCKET/snyk-results-$(date +%Y%m%d%H%M%S).json"
+      - snyk monitor || true
+
+      #### Snyk Code Scan ####
+      - echo "Running Snyk scan for code vulnerabilities ..."
+      - snyk code test --all-projects --org="$SNYK_ORG" --json > snyk-code-results.json || true
+      - aws s3 cp snyk-code-results.json "s3://$LOGS_BUCKET/snyk-code-results-$(date +%Y%m%d%H%M%S).json"
+
+      #### Docker Build ####
+      - echo "Building the image ..."
+      - docker build -t simple-python-app .
+
+  post_build:
+    commands:
+      #### Trivy Scan ####
+      - echo "Running Trivy scan ..."
+      - trivy image --exit-code 0 --severity HIGH,CRITICAL --format json --output trivy-results.json simple-python-app
+      - aws s3 cp trivy-results.json "s3://$LOGS_BUCKET/trivy-results-$(date +%Y%m%d%H%M%S).json"
+      - trivy image --exit-code 1 --severity CRITICAL simple-python-app
+
+      #### Docker Push ####
+      - echo "Tagging and pushing image ..."
+      - docker tag simple-python-app "$DOCKERHUB_USERNAME/simple-python-app"
+      - echo "$DOCKERHUB_PAT" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+      - docker push "$DOCKERHUB_USERNAME/simple-python-app"
+      - echo "Build and packaging successful."
