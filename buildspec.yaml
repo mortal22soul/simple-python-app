@@ -72,3 +72,26 @@ phases:
       - echo "$DOCKERHUB_PAT" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
       - docker push "$DOCKERHUB_USERNAME/simple-python-app"
       - echo "Build and packaging successful."
+
+artifacts:
+  files:
+    - "**/*"
+  discard-paths: yes
+  base-directory: .
+  secondary-artifacts:
+    semgrep-results:
+      files:
+        - semgrep-results.json
+      discard-paths: yes
+    snyk-results:
+      files:
+        - snyk-results.json
+      discard-paths: yes
+    snyk-code-results:
+      files:
+        - snyk-code-results.json
+      discard-paths: yes
+    trivy-results:
+      files:
+        - trivy-results.json
+      discard-paths: yes
