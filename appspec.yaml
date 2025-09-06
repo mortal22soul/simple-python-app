@@ -6,12 +6,11 @@ files:
     destination: /home/ubuntu/app
 
 hooks:
-  BeforeInstall:
+  ApplicationStop:
     - location: scripts/stop.sh
       timeout: 300
-      runas: ubuntu
-
+      runas: root
   AfterInstall:
     - location: scripts/start.sh
       timeout: 300
-      runas: ubuntu
+      runas: root
