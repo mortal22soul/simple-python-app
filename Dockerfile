@@ -20,8 +20,8 @@ EXPOSE 5000
 # ENV MY_ENV_VAR=value
 
 # Create a new user and switch to it
-# RUN useradd -ms /bin/bash non-root
-# USER non-root
+RUN useradd -ms /bin/bash non-root
+USER non-root
 
 # Run the Flask application
 CMD ["python", "app.py"]
