@@ -5,8 +5,8 @@ hooks:
   ApplicationStop:
     - location: stop.sh
       timeout: 180
-      runas: ubuntu
-  AfterInstall:
+      runas: ec2-user
+  ApplicationStart:
     - location: start.sh
       timeout: 180
-      runas: ubuntu
+      runas: ec2-user
