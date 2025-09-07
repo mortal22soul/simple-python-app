@@ -8,6 +8,8 @@ env:
     LOGS_BUCKET: logs-bucket
     SNYK_TOKEN: snyk-auth-token
     SNYK_ORG: snyk-org
+    SONAR_HOST_URL: sonar-url
+    SONAR_TOKEN: sonar-token
 
 phases:
   install:
@@ -16,9 +18,16 @@ phases:
     commands:
       - echo "Installing dependencies ..."
       - pip install -qr requirements.txt
+      - apt-get update
+      - apt-get install unzip curl wget gnupg
 
       - echo "Installing semgrep ..."
       - pip install -q semgrep
+
+      - echo "Installing SonarQube Scanner..."
+      - curl -sSLo sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-7.2.0.5079-linux-x64.zip
+      - unzip sonar-scanner.zip -d /opt/
+      - export PATH=$PATH:/opt/sonar-scanner-7.2.0.5079-linux-x64/bin
 
       - echo "Installing snyk cli ..."
       - curl https://static.snyk.io/cli/latest/snyk-linux -o snyk
@@ -26,11 +35,10 @@ phases:
       - mv ./snyk /usr/local/bin/
 
       - echo "Installing trivy ..."
-      - sudo apt-get update && sudo apt-get install -y wget gnupg curl
-      - wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
-      - echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
-      - sudo apt-get update
-      - sudo apt-get install -y trivy
+      - wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | tee /usr/share/keyrings/trivy.gpg > /dev/null
+      - echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | tee -a /etc/apt/sources.list.d/trivy.list
+      - apt-get update
+      - apt-get install -y trivy
 
   build:
     commands:
@@ -38,6 +46,10 @@ phases:
       - echo "Running Semgrep scan ..."
       - semgrep --config=auto --json --output=semgrep-results.json || true
       - aws s3 cp semgrep-results.json "s3://$LOGS_BUCKET/semgrep-results-$(date +%Y%m%d%H%M%S).json"
+
+      #### Sonarqube ####
+      - echo "Running SonarQube analysis..."
+      - sonar-scanner -Dsonar.host.url=$SONAR_HOST_URL -Dsonar.login=$SONAR_TOKEN
 
       #### Snyk Auth ####
       - echo "Authenticating with Snyk ..."
@@ -95,3 +107,21 @@ artifacts:
       files:
         - trivy-results.json
       discard-paths: yes
+
+reports:
+  snyk-vulnerabilities:
+    files:
+      - snyk-results.json
+    file-format: JSON
+  snyk-code-vulnerabilities:
+    files:
+      - snyk-code-results.json
+    file-format: JSON
+  semgrep-static-analysis:
+    files:
+      - semgrep-results.json
+    file-format: JSON
+  trivy-container-scan:
+    files:
+      - trivy-results.json
+    file-format: JSON

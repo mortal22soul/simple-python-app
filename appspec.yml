@@ -1,6 +1,11 @@
 version: 0.0
 os: linux
 
+files:
+  - source: /
+    destination: /home/ec2-user/myapp
+    overwrite: true
+
 hooks:
   ApplicationStop:
     - location: stop.sh
